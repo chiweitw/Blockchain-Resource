@@ -2,6 +2,8 @@
 pragma solidity ^0.8.19;
 
 import "forge-std/Test.sol";
+import "forge-std/console.sol";
+
 import "compound-protocol/contracts/SimplePriceOracle.sol";
 import "compound-protocol/contracts/WhitePaperInterestRateModel.sol";
 import "compound-protocol/contracts/Unitroller.sol";
@@ -34,8 +36,14 @@ contract FlashLiquidateTest is Test {
     // flashliquidate
     FlashLiquidate public flashLiquidate;
 
-    function setup() public {
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 17465000);
+    // common variables
+    uint256 public initialUSDCAmount;
+    uint256 public initialUNIAmount;
+    uint256 public mintAmount;
+    uint256 public borrowAmount;
+
+    function setUp() public {
+        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 17_465_000);
 
         // prepare oracle
         simplePriceOracle = new SimplePriceOracle();
@@ -54,9 +62,9 @@ contract FlashLiquidateTest is Test {
         cUSDCDelegate = new CErc20Delegate();
         cUSDC = new CErc20Delegator(
             address(USDC),
-            comptroller,
+            unitrollerProxy,
             InterestRateModel(address(whitePaperInterestModel)),
-            1 ether,
+            1e6,
             USDC.name(),
             USDC.symbol(),
             18,
@@ -64,15 +72,14 @@ contract FlashLiquidateTest is Test {
             address(cUSDCDelegate),
             becomeImplementationData
         );
-        unitrollerProxy._supportMarket(CToken(address(cUSDC)));
-
+        
         // prepare token B: UNI
         cUNIDelegate = new CErc20Delegate();
         cUNI = new CErc20Delegator(
             address(UNI),
-            comptroller,
+            unitrollerProxy,
             InterestRateModel(address(whitePaperInterestModel)),
-            1 ether,
+            1e18,
             UNI.name(),
             UNI.symbol(),
             18,
@@ -80,10 +87,13 @@ contract FlashLiquidateTest is Test {
             address(cUNIDelegate),
             becomeImplementationData
         );
-        unitrollerProxy._supportMarket(CToken(address(UNI)));
+
+        // support market
+        unitrollerProxy._supportMarket(CToken(address(cUSDC)));
+        unitrollerProxy._supportMarket(CToken(address(cUNI)));
         // set oracle price
-        simplePriceOracle.setUnderlyingPrice(CToken(address(cUSDC)), 1 * 10 * (36 - USDC.decimals()));
-        simplePriceOracle.setUnderlyingPrice(CToken(address(cUNI)), 5 * 10 * (36 - UNI.decimals()));
+        simplePriceOracle.setUnderlyingPrice(CToken(address(cUSDC)), 1 * 10 ** (36 - USDC.decimals()));
+        simplePriceOracle.setUnderlyingPrice(CToken(address(cUNI)), 5 * 10 ** (36 - UNI.decimals()));
         // set close factor
         unitrollerProxy._setCloseFactor(0.5 * 1e18);
         // set collateral factor
@@ -96,17 +106,52 @@ contract FlashLiquidateTest is Test {
         // deploy flashliquidate contract
         flashLiquidate = new FlashLiquidate();
 
-        // deal user1 1000 UNI
-        deal(address(UNI), user1, 1000 * 10 ** UNI.decimals());
+        // deal user1 initial UNI
+        deal(address(UNI), user1, 3000 * 10 ** UNI.decimals());
+
+        // set initial ammount
+        // initialUSDCAmount = 1000 * 10 ** USDC.decimals();
+        initialUNIAmount = 1000 * 10 ** UNI.decimals();
+        mintAmount = initialUNIAmount;
+        borrowAmount = 2500 * 10 ** USDC.decimals();
+
+        // deal(address(USDC), user1, initialUSDCAmount);
+        deal(address(UNI), user1, initialUNIAmount);
     }
 
     function testFlashLiquidate() public {
-        // user1 use 1000 UNI to borrow 2500 USDC
+        // 1. user1 use 1000 UNI to borrow 2500 USDC
+        assertEq(UNI.balanceOf(user1), mintAmount); // user have enough UNI to mint
 
-        // UNI price down to 4, and induce user1 shortfall
+        vm.startPrank(user1);
+        // 1.1 user1 approve cUNI to use UNI
+        ERC20(UNI).approve(address(cUNI), mintAmount);
 
-        // user2 use flashloan to liquidate user1
+        assertEq(ERC20(UNI).allowance(address(user1) ,address(cUNI)), mintAmount);
+        // 1.2 user1 mint 1000 cUNI
+        cUNI.mint(mintAmount);
 
-        // check user2 earn around 63 USDC
+        assertEq(cUNI.balanceOf(user1), mintAmount);
+        // 1.3 user1 enter markets
+        address[] memory addr = new address[](1);
+        addr[0] = address(cUNI);
+
+        unitrollerProxy.enterMarkets(addr);
+        // 1.4 user1 borrow USDC
+        deal(address(USDC), address(cUSDC), borrowAmount);
+        assertEq(USDC.balanceOf(address(cUSDC)), borrowAmount); // cUSDC pair has enough USDC to be borrowed
+
+
+        cUSDC.borrow(borrowAmount);
+
+        // assert user1 has 2500 USDC
+        assertEq(ERC20(USDC).balanceOf(user1), borrowAmount);
+        vm.stopPrank();
+
+        // 2. UNI price down to 4, and induce user1 shortfall
+
+        // 3. user2 use flashloan to liquidate user1
+
+        // 4. check user2 earn around 63 USDC
     }
 }
