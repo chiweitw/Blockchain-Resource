@@ -76,7 +76,8 @@ contract FlashLiquidate is IFlashLoanSimpleReceiver {
                 sqrtPriceLimitX96: 0
             });
 
-        ISwapRouter(SWAP_Router).exactInputSingle(swapParams);
+        uint256 amountOut = ISwapRouter(SWAP_Router).exactInputSingle(swapParams);
+        console.log(amountOut);
 
         // repay to flashloan
         IERC20(asset).approve(msg.sender, amount + premium);

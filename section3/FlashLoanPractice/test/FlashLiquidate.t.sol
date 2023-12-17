@@ -168,14 +168,14 @@ contract FlashLiquidateTest is Test {
         params.borrower = address(user1);
         params.borrowCToken = address(cUSDC);
         params.collateralCtoken = address(cUNI);
-        params.collateralToken = address(cUNI);
+        params.collateralToken = address(UNI);
 
         flashLiquidate.execute(address(USDC), borrowAmount / 2, abi.encode(params));
         vm.stopPrank();
 
-        // 4. check user2 earn around 63 USDC
+        // 4. check user2 earn around 63 USDC (in flashLiquidate)
         assertGt(
-            USDC.balanceOf(user2),
+            USDC.balanceOf(address(flashLiquidate)),
             63 * 10 ** USDC.decimals()
         );
     }
