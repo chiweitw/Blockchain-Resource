@@ -164,11 +164,11 @@ contract FlashLiquidateTest is Test {
         // 3. user2 use flashloan to liquidate user1
         vm.startPrank(user2);
 
-        params = new FlashLoanParams()
+        FlashLoanParams memory params;
         params.borrower = address(user1);
-        params.borrowCToken = CToken(address(cUSDC));
-        params.collateralCtoken = CToken(address(cUNI));
-        params.collateralToken = CToken(address(cUNI));
+        params.borrowCToken = address(cUSDC);
+        params.collateralCtoken = address(cUNI);
+        params.collateralToken = address(cUNI);
 
         flashLiquidate.execute(address(USDC), borrowAmount / 2, abi.encode(params));
         vm.stopPrank();

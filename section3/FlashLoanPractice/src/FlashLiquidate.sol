@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.19;
 
+import "forge-std/console.sol";
+
 import {IERC20} from "openzeppelin/token/ERC20/IERC20.sol";
 import {IFlashLoanSimpleReceiver, IPoolAddressesProvider, IPool} from "aave-v3-core/contracts/flashloan/interfaces/IFlashLoanSimpleReceiver.sol";
+import "compound-protocol/contracts/CErc20.sol";
+
+// uniswap-v3
+import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 
 contract FlashLiquidate is IFlashLoanSimpleReceiver {
     address constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
@@ -11,8 +17,8 @@ contract FlashLiquidate is IFlashLoanSimpleReceiver {
     struct FlashLoanParams {
         address borrower;
         address borrowCToken;
-        address collateralCtoken;
-        address collateralToken;
+        address rewardCToken;
+        address rewardToken;
     }
 
     function execute(
@@ -38,26 +44,50 @@ contract FlashLiquidate is IFlashLoanSimpleReceiver {
     ) external returns (bool) {
         require(initiator == address(this), "not initialte by this contract");
 
-        ({
-            address borrower;
-            address borrowCToken;
-            address collateralCtoken;
-            address collateralToken;
-        }) = abi.decode(params, FlashLoanParams);
+        FlashLoanParams memory params = abi.decode(params, (FlashLoanParams));
 
         // approve cUSDC to use USDC
-        IERC20(USDC).approve(address(borrowCToken), amount);
+        IERC20(USDC).approve(address(params.borrowCToken), amount);
 
         // liquidate borrower and get cUNI as rewards
+        uint256 err = CErc20(params.borrowCToken).liquidateBorrow(
+            params.borrower,
+            amount,
+            CErc20(params.rewardCToken)
+        );
+
+        require(err == 0, "liquidate failed");
 
         // redeem cUNI to get UNI
+        CErc20(params.rewardCToken).redeem(CErc20(params.rewardCToken).balanceOf(initiator));
 
         // swap UNI to USDC
+        IERC20(params.rewardToken).approve(SWAP_Router, IERC20(params.rewardToken).balanceOf(initiator));
+
+        ISwapRouter.ExactInputSingleParams memory swapParams = ISwapRouter
+            .ExactInputSingleParams({
+                tokenIn: params.rewardToken,
+                tokenOut: asset,
+                fee: 3000, // 0.3%
+                recipient: initiator,
+                deadline: block.timestamp,
+                amountIn: IERC20(params.rewardToken).balanceOf(initiator),
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            });
+
+        ISwapRouter(SWAP_Router).exactInputSingle(swapParams);
 
         // repay to flashloan
+        IERC20(asset).approve(msg.sender, amount + premium);
+        return true;
     }
 
     function ADDRESSES_PROVIDER() public view returns (IPoolAddressesProvider) {
         return IPoolAddressesProvider(POOL_ADDRESSES_PROVIDER);
+    }
+
+    function POOL() public view returns (IPool) {
+        return IPool(ADDRESSES_PROVIDER().getPool());
     }
 }
