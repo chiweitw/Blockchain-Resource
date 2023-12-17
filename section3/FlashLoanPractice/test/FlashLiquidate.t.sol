@@ -100,5 +100,13 @@ contract FlashLiquidateTest is Test {
         deal(address(UNI), user1, 1000 * 10 ** UNI.decimals());
     }
 
-    function testFlashLiquidate() public {}
+    function testFlashLiquidate() public {
+        // user1 use 1000 UNI to borrow 2500 USDC
+
+        // UNI price down to 4, and induce user1 shortfall
+
+        // user2 use flashloan to liquidate user1
+
+        // check user2 earn around 63 USDC
+    }
 }
