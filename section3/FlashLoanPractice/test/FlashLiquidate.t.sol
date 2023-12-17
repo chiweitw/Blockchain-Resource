@@ -42,6 +42,14 @@ contract FlashLiquidateTest is Test {
     uint256 public mintAmount;
     uint256 public borrowAmount;
 
+    // flashloan variables
+    struct FlashLoanParams {
+        address borrower;
+        address borrowCToken;
+        address collateralCtoken;
+        address collateralToken;
+    }
+
     function setUp() public {
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 17_465_000);
 
@@ -141,7 +149,6 @@ contract FlashLiquidateTest is Test {
         deal(address(USDC), address(cUSDC), borrowAmount);
         assertEq(USDC.balanceOf(address(cUSDC)), borrowAmount); // cUSDC pair has enough USDC to be borrowed
 
-
         cUSDC.borrow(borrowAmount);
 
         // assert user1 has 2500 USDC
@@ -149,9 +156,27 @@ contract FlashLiquidateTest is Test {
         vm.stopPrank();
 
         // 2. UNI price down to 4, and induce user1 shortfall
+        simplePriceOracle.setUnderlyingPrice(CToken(address(cUNI)), 4e18);
+
+        (, , uint shortfall) = unitrollerProxy.getAccountLiquidity(user1);
+        assertGt(shortfall, 0, "account has not excess collateral");
 
         // 3. user2 use flashloan to liquidate user1
+        vm.startPrank(user2);
+
+        params = new FlashLoanParams()
+        params.borrower = address(user1);
+        params.borrowCToken = CToken(address(cUSDC));
+        params.collateralCtoken = CToken(address(cUNI));
+        params.collateralToken = CToken(address(cUNI));
+
+        flashLiquidate.execute(address(USDC), borrowAmount / 2, abi.encode(params));
+        vm.stopPrank();
 
         // 4. check user2 earn around 63 USDC
+        assertGt(
+            USDC.balanceOf(user2),
+            63 * 10 ** USDC.decimals()
+        );
     }
 }
