@@ -90,4 +90,3 @@
 [submodule "section3/CompoundGovernancePractice/lib/openzeppelin-contracts"]
 	path = section3/CompoundGovernancePractice/lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-
