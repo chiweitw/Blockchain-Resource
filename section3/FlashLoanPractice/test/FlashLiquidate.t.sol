@@ -38,16 +38,66 @@ contract FlashLiquidateTest is Test {
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 17465000);
 
         // prepare oracle
+        simplePriceOracle = new SimplePriceOracle();
         // prepare whitepapper
+        whitePaperInterestModel = new WhitePaperInterestRateModel(0, 0);
         // prepare comptroller
+        comptroller = new Comptroller();
+        unitroller = new Unitroller();
+        unitrollerProxy = Comptroller(address(unitroller));
+        unitroller._setPendingImplementation(address(comptroller));
+        comptroller._become(unitroller);
+        unitrollerProxy._setPriceOracle(simplePriceOracle);
+        // becomeImplementationData
+        bytes memory becomeImplementationData = new bytes(0x00);
         // prepare token A: USDC
+        cUSDCDelegate = new CErc20Delegate();
+        cUSDC = new CErc20Delegator(
+            address(USDC),
+            comptroller,
+            InterestRateModel(address(whitePaperInterestModel)),
+            1 ether,
+            USDC.name(),
+            USDC.symbol(),
+            18,
+            payable(msg.sender),
+            address(cUSDCDelegate),
+            becomeImplementationData
+        );
+        unitrollerProxy._supportMarket(CToken(address(cUSDC)));
+
         // prepare token B: UNI
+        cUNIDelegate = new CErc20Delegate();
+        cUNI = new CErc20Delegator(
+            address(UNI),
+            comptroller,
+            InterestRateModel(address(whitePaperInterestModel)),
+            1 ether,
+            UNI.name(),
+            UNI.symbol(),
+            18,
+            payable(msg.sender),
+            address(cUNIDelegate),
+            becomeImplementationData
+        );
+        unitrollerProxy._supportMarket(CToken(address(UNI)));
         // set oracle price
+        simplePriceOracle.setUnderlyingPrice(CToken(address(cUSDC)), 1 * 10 * (36 - USDC.decimals()));
+        simplePriceOracle.setUnderlyingPrice(CToken(address(cUNI)), 5 * 10 * (36 - UNI.decimals()));
         // set close factor
+        unitrollerProxy._setCloseFactor(0.5 * 1e18);
         // set collateral factor
+        unitrollerProxy._setCollateralFactor(CToken(address(cUNI)), 0.5 * 1e18);
         // set liquidation incentive
+        unitrollerProxy._setLiquidationIncentive(1.08 * 1e18);
         // set users
+        user1 = makeAddr("User1");
+        user2 = makeAddr("User2");
         // deploy flashliquidate contract
+        flashLiquidate = new FlashLiquidate();
+
+        // deal user1 1000 UNI
+        deal(address(UNI), user1, 1000 * 10 ** UNI.decimals());
     }
 
     function testFlashLiquidate() public {}
